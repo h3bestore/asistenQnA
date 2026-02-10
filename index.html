@@ -1,41 +1,39 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  setDoc, 
-  onSnapshot, 
-  deleteDoc, 
-  query 
-} from 'firebase/firestore';
-import { 
-  getAuth, 
-  signInAnonymously, 
-  onAuthStateChanged 
-} from 'firebase/auth';
-import { 
-  Search, 
-  Plus, 
-  Trash2, 
-  MessageSquare, 
-  Sparkles, 
-  Copy, 
-  Save, 
-  X,
-  Home,
-  Database,
-  Send,
+import React, { useEffect, useMemo, useState } from "react";
+import { initializeApp } from "firebase/app";
+import {
+  getFirestore,
+  collection,
+  query,
+  onSnapshot,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  writeBatch,
+  getDocs,
+} from "firebase/firestore";
+import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged,
+} from "firebase/auth";
+import {
+  Search,
+  Sparkles,
   Loader2,
-  Edit3,
-  CheckCircle2,
-  Cloud,
-  FileUp,
-  AlertCircle,
-  CloudOff
-} from 'lucide-react';
+  Database,
+  MessageSquare,
+  Copy,
+  Plus,
+  Upload,
+  Edit2,
+  Trash2,
+  X,
+  Check,
+  AlertTriangle,
+} from "lucide-react";
 
-// --- KONFIGURASI FIREBASE ASISTENQNA ---
+/* ================= FIREBASE ================= */
 const firebaseConfig = {
   apiKey: "AIzaSyD7cc7bINhjzEEs4cRs8aM2nVPRrp-P1es",
   authDomain: "asistenqna.firebaseapp.com",
@@ -43,139 +41,208 @@ const firebaseConfig = {
   storageBucket: "asistenqna.firebasestorage.app",
   messagingSenderId: "841717936963",
   appId: "1:841717936963:web:6aa8e3d3e551d346f835f6",
-  measurementId: "G-QXLKE9GDRD"
 };
 
-// Inisialisasi Firebase secara aman
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'villa-assist-v1';
 
-const appId = 'villa-assist-v1';
-
-// Komponen Icon Wanita (Avatar SVG)
-const FemaleAvatarIcon = () => (
-  <svg viewBox="0 0 24 24" className="w-10 h-10 drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="12" cy="12" r="12" fill="#E0E7FF"/>
-    <path d="M12 14C14.2091 14 16 12.2091 16 10C16 7.79086 14.2091 6 12 6C9.79086 6 8 7.79086 8 10C8 12.2091 9.79086 14 12 14Z" fill="#6366F1"/>
-    <path d="M12 15C8.68629 15 6 17.6863 6 21H18C18 17.6863 15.3137 15 12 15Z" fill="#4F46E5"/>
-    <path d="M12 5C10.5 5 9 6.5 8.5 8C8 9.5 8.5 11 8.5 11C8.5 11 9 10 10 9.5C11 9 12 9 13 9.5C14 10 14.5 11 14.5 11C14.5 11 15 9.5 14.5 8C14 6.5 12.5 5 12 5Z" fill="#312E81"/>
-  </svg>
+// Komponen Icon Wanita Cantik (Avatar)
+const FemaleAvatar = () => (
+  <div className="relative flex-shrink-0">
+    <svg viewBox="0 0 24 24" className="w-10 h-10 drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="12" fill="#EEF2FF"/>
+      <path d="M12 14C14.2091 14 16 12.2091 16 10C16 7.79086 14.2091 6 12 6C9.79086 6 8 7.79086 8 10C8 12.2091 9.79086 14 12 14Z" fill="#6366F1"/>
+      <path d="M12 15C8.68629 15 6 17.6863 6 21H18C18 17.6863 15.3137 15 12 15Z" fill="#4F46E5"/>
+      <path d="M12 5C10.5 5 9 6.5 8.5 8C8 9.5 8.5 11 8.5 11C8.5 11 9 10 10 9.5C11 9 12 9 13 9.5C14 10 14.5 11 14.5 11C14.5 11 15 9.5 14.5 8C14 6.5 12.5 5 12 5Z" fill="#312E81"/>
+    </svg>
+    <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></div>
+  </div>
 );
 
-const App = () => {
-  const [faqs, setFaqs] = useState([]);
+export default function App() {
   const [user, setUser] = useState(null);
-  const [authError, setAuthError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [aiResponse, setAiResponse] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [entryForm, setEntryForm] = useState({ question: '', answer: '' });
-  const [activeTab, setActiveTab] = useState('chat');
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  const [importStatus, setImportStatus] = useState({ loading: false, message: '' });
+  const [faqs, setFaqs] = useState([]);
+  const [search, setSearch] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const [loadingAI, setLoadingAI] = useState(false);
+  const [loadingDB, setLoadingDB] = useState(true);
+  const [tab, setTab] = useState("chat");
   
-  const fileInputRef = useRef(null);
-  const apiKey = ""; // Masukkan API Key Gemini Anda di sini
+  // State for CRUD
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({ question: "", answer: "" });
+  const [isAdding, setIsAdding] = useState(false);
+  const [isErasing, setIsErasing] = useState(false);
 
-  // Efek Autentikasi
+  const apiKey = ""; // API Key Gemini
+
+  /* ================= AUTH ================= */
   useEffect(() => {
-    let isMounted = true;
     const initAuth = async () => {
       try {
-        const result = await signInAnonymously(auth);
-        if (isMounted) {
-            console.log("Logged in as:", result.user.uid);
-            setAuthError(null);
-        }
-      } catch (error) {
-        if (isMounted) {
-            if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
-              setAuthError("Anonymous Sign-in belum aktif di Firebase Console.");
-            } else {
-              setAuthError(error.message);
-            }
-        }
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.error("Auth error:", err);
       }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (isMounted) {
-        setUser(currentUser);
-        if (currentUser) setAuthError(null);
-      }
-    });
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
+    return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // Sinkronisasi Firestore
+  /* ================= FIRESTORE ================= */
   useEffect(() => {
     if (!user) return;
-    const faqCollection = collection(db, 'artifacts', appId, 'public', 'data', 'faqs');
-    const q = query(faqCollection);
-    const unsubscribe = onSnapshot(q, 
-      (snapshot) => {
-        const items = [];
-        snapshot.forEach((doc) => {
-          items.push({ id: doc.id, ...doc.data() });
-        });
-        setFaqs(items);
-        setIsLoadingData(false);
-      },
-      (error) => {
-        console.error("Firestore error:", error);
-        setIsLoadingData(false);
-      }
+
+    const q = query(
+      collection(db, "artifacts", appId, "public", "data", "faqs")
     );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setFaqs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoadingDB(false);
+    }, (err) => {
+      console.error("Firestore error:", err);
+      setLoadingDB(false);
+    });
+
     return () => unsubscribe();
   }, [user]);
 
+  /* ================= SEARCH ================= */
   const filteredFaqs = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const queryLower = searchQuery.toLowerCase();
-    const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+    if (!search) return [];
+    const q = search.toLowerCase();
+    return faqs.filter(
+      f =>
+        f.question?.toLowerCase().includes(q) ||
+        f.answer?.toLowerCase().includes(q)
+    );
+  }, [faqs, search]);
 
-    return faqs.map(faq => {
-      const target = (faq.question + " " + faq.answer).toLowerCase();
-      let score = 0;
-      if (target.includes(queryLower)) score += 100;
-      queryWords.forEach(word => {
-        if (target.includes(word)) score += 20;
-      });
-      return { ...faq, score };
-    })
-    .filter(faq => faq.score > 0)
-    .sort((a, b) => b.score - a.score);
-  }, [faqs, searchQuery]);
-
-  const getAiSuggestion = async (queryText) => {
-    if (!queryText || !apiKey) return;
-    setIsGenerating(true);
-    setAiResponse('');
-    const systemPrompt = `Anda asisten admin villa. Gunakan data: ${JSON.stringify(faqs)}. Jawab sopan.`;
+  /* ================= CRUD ACTIONS ================= */
+  const handleSave = async () => {
+    if (!user || !formData.question || !formData.answer) return;
+    
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: queryText }] }],
-          systemInstruction: { parts: [{ text: systemPrompt }] }
-        })
-      });
-      const data = await response.json();
-      setAiResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "Gagal membuat saran.");
-    } catch (error) {
-      setAiResponse("Kesalahan pada AI.");
+      if (editingId) {
+        const docRef = doc(db, "artifacts", appId, "public", "data", "faqs", editingId);
+        await updateDoc(docRef, formData);
+        setEditingId(null);
+      } else {
+        const colRef = collection(db, "artifacts", appId, "public", "data", "faqs");
+        await addDoc(colRef, formData);
+        setIsAdding(false);
+      }
+      setFormData({ question: "", answer: "" });
+    } catch (err) {
+      console.error("Save error:", err);
     }
-    setIsGenerating(false);
   };
 
-  const handleCopy = (text) => {
+  const handleDelete = async (id) => {
+    if (!window.confirm("Hapus data ini?")) return;
+    try {
+      await deleteDoc(doc(db, "artifacts", appId, "public", "data", "faqs", id));
+    } catch (err) {
+      console.error("Delete error:", err);
+    }
+  };
+
+  const handleEraseAll = async () => {
+    if (!user || faqs.length === 0) return;
+    setIsErasing(true);
+    
+    try {
+      const batch = writeBatch(db);
+      const colRef = collection(db, "artifacts", appId, "public", "data", "faqs");
+      const snapshot = await getDocs(colRef);
+      
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      
+      await batch.commit();
+      alert("Seluruh database telah dikosongkan.");
+    } catch (err) {
+      console.error("Erase error:", err);
+      alert("Gagal menghapus database.");
+    } finally {
+      setIsErasing(false);
+    }
+  };
+
+  const handleCsvUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target.result;
+      const rows = text.split("\n").slice(1); // Skip header
+      
+      const colRef = collection(db, "artifacts", appId, "public", "data", "faqs");
+      
+      for (let row of rows) {
+        const [question, answer] = row.split(",").map(s => s?.trim());
+        if (question && answer) {
+          await addDoc(colRef, { question, answer });
+        }
+      }
+      alert("Import CSV selesai!");
+    };
+    reader.readAsText(file);
+  };
+
+  /* ================= AI ================= */
+  const generateAI = async () => {
+    if (!search || !apiKey) return;
+
+    setLoadingAI(true);
+    setAiResponse("");
+
+    const SYSTEM_PROMPT = `
+Kamu adalah CUSTOMER SERVICE villa yang profesional, ramah, dan persuasif.
+
+Gaya bahasa:
+- Santai, sopan, dan hangat
+- Seperti CS WhatsApp (bukan robot)
+- Tidak kaku, tidak terlalu panjang
+
+Aturan utama:
+- Jawaban singkat & jelas (Maksimal 3-5 kalimat)
+- Manfaatkan data FAQ berikut sebagai acuan utama:
+${JSON.stringify(faqs)}
+
+- Jika ada jawaban di data, gunakan kalimat sendiri (jangan copy mentah)
+- Jika tidak ada di data, jawab secara logis namun tetap aman
+- Tutup dengan ajakan booking ringan (CTA), contoh: "Mau aku cek ketersediaan tanggalnya sekarang?"
+`;
+
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: `Pertanyaan tamu: ${search}` }] }],
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          }),
+        }
+      );
+
+      const json = await res.json();
+      setAiResponse(json.candidates?.[0]?.content?.parts?.[0]?.text || "Tidak ada jawaban.");
+    } catch {
+      setAiResponse("Gagal menghasilkan jawaban AI.");
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
+  const copyText = (text) => {
     const el = document.createElement('textarea');
     el.value = text;
     document.body.appendChild(el);
@@ -184,311 +251,215 @@ const App = () => {
     document.body.removeChild(el);
   };
 
-  const handleSubmit = async () => {
-    if (!user || !entryForm.question || !entryForm.answer) return;
-    try {
-      const id = editingId || Date.now().toString();
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'faqs', id);
-      await setDoc(docRef, {
-        question: entryForm.question,
-        answer: entryForm.answer,
-        updatedAt: new Date().toISOString()
-      });
-      closeModal();
-    } catch (error) {
-      console.error("Save error:", error);
-    }
-  };
-
-  const deleteFaq = async (id) => {
-    if (!user) return;
-    try {
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'faqs', id);
-      await deleteDoc(docRef);
-    } catch (error) {
-      console.error("Delete error:", error);
-    }
-  };
-
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    setImportStatus({ loading: true, message: 'Memproses CSV...' });
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const text = e.target.result;
-      const lines = text.split('\n');
-      const dataToImport = [];
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        const parts = line.split(',');
-        if (parts.length >= 2) {
-          dataToImport.push({
-            question: parts[0].replace(/^"|"$/g, '').trim(),
-            answer: parts.slice(1).join(',').replace(/^"|"$/g, '').trim()
-          });
-        }
-      }
-      try {
-        for (const item of dataToImport) {
-          const id = Date.now().toString() + Math.random().toString(36).substring(7);
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'faqs', id);
-          await setDoc(docRef, { ...item, updatedAt: new Date().toISOString() });
-        }
-        setImportStatus({ loading: false, message: `Berhasil mengimpor ${dataToImport.length} data!` });
-      } catch (error) {
-        setImportStatus({ loading: false, message: 'Gagal impor.' });
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setEditingId(null);
-    setEntryForm({ question: '', answer: '' });
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* Banner Error Utama */}
-      {authError && (
-        <div className="bg-red-600 text-white px-6 py-4 flex items-center justify-between text-sm shadow-lg sticky top-0 z-50">
+      {/* HEADER */}
+      <header className="bg-white border-b sticky top-0 z-10 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <AlertCircle size={22} className="shrink-0" />
+            <FemaleAvatar />
             <div>
-              <p className="font-bold">Konfigurasi Firebase Tidak Lengkap</p>
-              <p className="opacity-90">{authError}</p>
+              <h1 className="font-black text-xl text-indigo-600 leading-tight">
+                VillaAssist <span className="text-slate-800">Pro</span>
+              </h1>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Management System</p>
             </div>
           </div>
-          <div className="flex gap-4 items-center">
-            <a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" className="bg-white text-red-600 px-4 py-1.5 rounded-lg font-bold text-xs hover:bg-slate-100 transition-colors">Buka Console</a>
-            <button onClick={() => window.location.reload()} className="p-1 hover:bg-white/20 rounded-full transition-colors"><X size={18} /></button>
-          </div>
-        </div>
-      )}
-
-      <nav className="bg-white border-b sticky top-0 z-10 px-6 py-4 flex justify-between items-center shadow-sm">
-        <div className="flex items-center gap-4">
-          {/* Ikon Wanita Cantik / Avatar */}
-          <FemaleAvatarIcon />
           
-          <div>
-            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-              VillaAssist <span className="text-indigo-600">Pro</span>
-            </h1>
-            <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-tighter">
-              {user ? (
-                <span className="text-emerald-600 flex items-center gap-1"><Cloud size={10} /> Cloud Connected</span>
-              ) : authError ? (
-                <span className="text-red-500 flex items-center gap-1"><CloudOff size={10} /> Disconnected</span>
-              ) : (
-                <span className="text-amber-500 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Authenticating...</span>
-              )}
-            </div>
+          <div className="flex gap-2 bg-slate-100 p-1 rounded-xl">
+            <button onClick={() => setTab("chat")} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === "chat" ? "bg-white shadow text-indigo-600" : "text-slate-500"}`}>
+              <MessageSquare size={16} /> Chat
+            </button>
+            <button onClick={() => setTab("db")} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === "db" ? "bg-white shadow text-indigo-600" : "text-slate-500"}`}>
+              <Database size={16} /> Database
+            </button>
           </div>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-xl">
-          <button onClick={() => setActiveTab('chat')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'chat' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}>
-            <MessageSquare size={16} className="inline mr-2" /> Chat
-          </button>
-          <button onClick={() => setActiveTab('database')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'database' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}>
-            <Database size={16} className="inline mr-2" /> Database
-          </button>
-        </div>
-      </nav>
+      </header>
 
-      <main className="max-w-6xl mx-auto p-6">
-        {authError && !user ? (
-          <div className="bg-white border-2 border-red-50 rounded-3xl p-12 text-center shadow-2xl max-w-2xl mx-auto mt-10">
-            <div className="bg-red-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-8">
-              <CloudOff size={48} className="text-red-500" />
+      <main className="max-w-7xl mx-auto p-6">
+        {tab === "chat" ? (
+          <>
+            <div className="relative mb-8">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                className="w-full pl-14 pr-4 py-5 rounded-2xl border-none shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none text-lg transition-all"
+                placeholder="Tanyakan sesuatu tentang villa..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
-            <h2 className="text-3xl font-black text-slate-800 mb-4">Akses Database Ditolak</h2>
-            <p className="text-slate-600 mb-8 leading-relaxed text-lg">
-              Fitur <strong>Anonymous Sign-in</strong> belum dinyalakan di Firebase Console Anda.
-            </p>
-            <button onClick={() => window.location.reload()} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold">Refresh Halaman</button>
-          </div>
-        ) : !user ? (
-          <div className="flex flex-col items-center justify-center py-32 text-slate-400">
-            <Loader2 size={48} className="animate-spin mb-6 text-indigo-600" />
-            <p className="text-xl font-medium">Memverifikasi akses...</p>
-          </div>
-        ) : (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-            {activeTab === 'chat' ? (
-                <div className="space-y-6">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <label className="block text-sm font-semibold mb-3 text-slate-700">Masukkan Pesan Tamu:</label>
-                  <div className="relative group">
-                    <textarea 
-                      className="w-full p-4 pr-12 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all h-24 resize-none bg-slate-50/30"
-                      placeholder="Contoh: Apakah villa ini ada kolam renang pribadinya?"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                    <button 
-                      onClick={() => getAiSuggestion(searchQuery)}
-                      disabled={!searchQuery || isGenerating}
-                      className="absolute bottom-4 right-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white p-2 rounded-lg transition-colors shadow-lg"
-                    >
-                      {isGenerating ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
-                    </button>
-                  </div>
-                </div>
-  
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <h3 className="font-bold text-slate-700 flex items-center gap-2 px-1 text-sm uppercase tracking-wider">
-                      <Database size={16} className="text-slate-400" /> Kecocokan Database
-                    </h3>
-                    <div className="space-y-3 h-[450px] overflow-y-auto pr-2 custom-scrollbar">
-                      {isLoadingData ? (
-                        <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-300" /></div>
-                      ) : searchQuery && filteredFaqs.length > 0 ? (
-                        filteredFaqs.map(faq => (
-                          <div key={faq.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm group relative hover:border-indigo-300 hover:shadow-md transition-all">
-                            <p className="text-[10px] font-black text-indigo-600 italic mb-1 uppercase tracking-tighter">DATA: {faq.question}</p>
-                            <p className="text-sm text-slate-600 mb-3 leading-relaxed">{faq.answer}</p>
-                            <button onClick={() => handleCopy(faq.answer)} className="w-full flex items-center justify-center gap-2 py-2 bg-slate-50 hover:bg-indigo-600 hover:text-white text-slate-600 rounded-lg text-xs font-bold border border-transparent transition-all">
-                              <Copy size={14} /> Salin Jawaban Ini
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-400 bg-white rounded-2xl border-2 border-dashed border-slate-100 text-center p-8">
-                          <Search size={40} className="mb-4 opacity-10" />
-                          <p className="text-sm font-medium">Hasil database muncul di sini.</p>
-                        </div>
-                      )}
+
+            <div className="grid md:grid-cols-2 gap-8">
+              {/* DATABASE MATCH */}
+              <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+                <h3 className="font-black mb-6 text-slate-700 flex items-center gap-2 uppercase text-xs tracking-widest">
+                  <Database size={16} className="text-indigo-500" /> Kecocokan Database
+                </h3>
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                  {loadingDB ? (
+                    <div className="flex justify-center py-10"><Loader2 className="animate-spin text-indigo-200" size={32} /></div>
+                  ) : filteredFaqs.length ? (
+                    filteredFaqs.map(f => (
+                      <div key={f.id} className="border border-slate-100 bg-slate-50/50 rounded-2xl p-5 hover:border-indigo-300 hover:bg-white transition-all">
+                        <p className="font-bold text-slate-800 text-sm mb-2">{f.question}</p>
+                        <p className="text-sm text-slate-600 leading-relaxed">{f.answer}</p>
+                        <button onClick={() => copyText(f.answer)} className="flex items-center gap-2 text-xs mt-4 text-indigo-600 font-black hover:text-indigo-700">
+                          <Copy size={14} /> SALIN JAWABAN
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-20 opacity-30">
+                      <Search size={48} className="mx-auto mb-4" />
+                      <p className="text-sm font-bold uppercase tracking-widest">{search ? "Tidak ada hasil" : "Menunggu input..."}</p>
                     </div>
-                  </div>
-  
-                  <div className="space-y-4">
-                    <h3 className="font-bold text-indigo-900 flex items-center gap-2 px-1 text-sm uppercase tracking-wider">
-                      <Sparkles size={16} className="text-indigo-500" /> Rekomendasi Balasan AI
-                    </h3>
-                    <div className="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-2xl border border-indigo-100 shadow-sm h-[450px] flex flex-col">
-                      {isGenerating ? (
-                        <div className="flex flex-col items-center justify-center h-full text-indigo-400 gap-3">
-                          <Loader2 size={32} className="animate-spin" />
-                          <p className="text-sm font-bold animate-pulse">Menghubungkan ke Gemini...</p>
-                        </div>
-                      ) : aiResponse ? (
-                        <div className="flex flex-col h-full">
-                          <div className="flex-1 overflow-y-auto text-sm text-slate-700 leading-relaxed whitespace-pre-wrap pr-2">
-                            {aiResponse}
-                          </div>
-                          <button onClick={() => handleCopy(aiResponse)} className="mt-4 flex items-center justify-center gap-2 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-black shadow-lg shadow-indigo-100 transition-all active:scale-95">
-                            <Copy size={16} /> Salin Balasan AI
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-300 text-center px-4">
-                          <Send size={40} className="mb-4 opacity-10" />
-                          <p className="text-sm font-medium">Draft otomatis AI akan muncul di sini.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
-            ) : (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-6 border-b flex flex-wrap justify-between items-center bg-slate-50/50 gap-4">
-                  <div className="flex-1">
-                    <h2 className="text-lg font-black text-slate-800">Daftar FAQ & Ketentuan</h2>
-                    <p className="text-sm text-slate-500 font-medium">Terhubung ke Cloud Database</p>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
-                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-xl border border-slate-200 transition-all text-sm font-bold">
-                      <FileUp size={18} /> Import CSV
-                    </button>
-                    <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-md text-sm font-bold">
-                      <Plus size={18} /> Tambah Data
-                    </button>
-                  </div>
+
+              {/* AI */}
+              <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm flex flex-col">
+                <h3 className="font-black mb-6 text-indigo-600 flex items-center gap-2 uppercase text-xs tracking-widest">
+                  <Sparkles size={16} /> Rekomendasi AI
+                </h3>
+                <button
+                  onClick={generateAI}
+                  disabled={loadingAI || !search}
+                  className="w-full mb-6 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 text-white py-4 rounded-2xl font-black transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
+                >
+                  {loadingAI ? <Loader2 className="animate-spin" /> : <><Sparkles size={18} /> GENERATE BALASAN</>}
+                </button>
+                <div className="flex-1 bg-indigo-50/30 rounded-2xl p-6 border border-indigo-100 overflow-y-auto max-h-[350px]">
+                  <pre className="text-sm font-sans whitespace-pre-wrap text-slate-700 leading-relaxed italic">
+                    {aiResponse || "Klik tombol di atas untuk membuat draf balasan otomatis..."}
+                  </pre>
                 </div>
-  
-                <div className="p-6">
-                  <div className="relative mb-6">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input type="text" placeholder="Cari pertanyaan di database..." className="w-full pl-10 pr-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                {aiResponse && (
+                  <button onClick={() => copyText(aiResponse)} className="mt-4 py-3 bg-white border-2 border-indigo-600 text-indigo-600 font-black rounded-xl text-xs hover:bg-indigo-600 hover:text-white transition-all">
+                    SALIN HASIL AI
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          /* DATABASE TAB */
+          <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm animate-in fade-in slide-in-from-bottom-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+              <div>
+                <h3 className="font-black text-xl text-slate-800">Database FAQ Villa</h3>
+                <p className="text-slate-400 text-sm font-medium">Kelola jawaban otomatis dan pengetahuan AI</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button 
+                  onClick={() => {
+                    if(window.confirm("PERINGATAN: Tindakan ini akan menghapus SELURUH data di database secara permanen. Lanjutkan?")) {
+                      handleEraseAll();
+                    }
+                  }}
+                  disabled={isErasing || faqs.length === 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                >
+                  {isErasing ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />} 
+                  Erase All Database
+                </button>
+                <label className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-bold text-slate-600 cursor-pointer transition-all">
+                  <Upload size={16} /> Import CSV
+                  <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
+                </label>
+                <button 
+                  onClick={() => { setIsAdding(true); setEditingId(null); setFormData({question: "", answer: ""}); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-sm font-bold text-white transition-all"
+                >
+                  <Plus size={16} /> Tambah Data
+                </button>
+              </div>
+            </div>
+
+            {/* FORM ADD/EDIT */}
+            {(isAdding || editingId) && (
+              <div className="mb-8 p-6 bg-slate-50 border border-indigo-100 rounded-2xl animate-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="font-black text-indigo-600">{editingId ? "Edit Jawaban" : "Tambah Data Baru"}</h4>
+                  <button onClick={() => { setIsAdding(false); setEditingId(null); }} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                </div>
+                <div className="grid gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block tracking-widest">Pertanyaan / Kata Kunci</label>
+                    <input 
+                      className="w-full p-3 rounded-xl border focus:ring-2 focus:ring-indigo-500 outline-none" 
+                      placeholder="Contoh: Apakah ada WiFi?" 
+                      value={formData.question}
+                      onChange={e => setFormData({...formData, question: e.target.value})}
+                    />
                   </div>
-                  <div className="overflow-x-auto border border-slate-100 rounded-xl">
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-50/80">
-                        <tr className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                          <th className="py-4 px-6 w-1/3">Pertanyaan</th>
-                          <th className="py-4 px-6">Jawaban</th>
-                          <th className="py-4 px-6 text-right w-24">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50">
-                        {isLoadingData ? (
-                          <tr><td colSpan="3" className="py-12 text-center text-slate-400 font-medium"><Loader2 className="animate-spin inline mr-2 text-indigo-500" /> Memuat data...</td></tr>
-                        ) : (
-                          faqs.filter(f => f.question.toLowerCase().includes(searchQuery.toLowerCase())).map(faq => (
-                            <tr key={faq.id} className="hover:bg-indigo-50/30 transition-colors group">
-                              <td className="py-4 px-6 text-sm text-slate-700 font-bold">{faq.question}</td>
-                              <td className="py-4 px-6 text-sm text-slate-500 max-w-xs truncate">{faq.answer}</td>
-                              <td className="py-4 px-6 text-right whitespace-nowrap">
-                                <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => { setEditingId(faq.id); setEntryForm({question: faq.question, answer: faq.answer}); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg"><Edit3 size={16} /></button>
-                                    <button onClick={() => deleteFaq(faq.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-white rounded-lg"><Trash2 size={16} /></button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block tracking-widest">Jawaban CS</label>
+                    <textarea 
+                      className="w-full p-3 rounded-xl border focus:ring-2 focus:ring-indigo-500 outline-none h-24" 
+                      placeholder="Tulis jawaban lengkap yang sopan..." 
+                      value={formData.answer}
+                      onChange={e => setFormData({...formData, answer: e.target.value})}
+                    />
                   </div>
+                  <button 
+                    onClick={handleSave}
+                    className="w-full py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Check size={18} /> Simpan Perubahan
+                  </button>
                 </div>
               </div>
             )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-slate-400 border-b">
+                    <th className="pb-4 font-black text-[10px] uppercase tracking-widest">Pertanyaan</th>
+                    <th className="pb-4 font-black text-[10px] uppercase tracking-widest">Jawaban</th>
+                    <th className="pb-4 font-black text-[10px] uppercase tracking-widest text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {faqs.map(f => (
+                    <tr key={f.id} className="group hover:bg-slate-50/50 transition-colors">
+                      <td className="py-4 pr-4 font-bold text-sm text-slate-800 align-top max-w-[200px]">{f.question}</td>
+                      <td className="py-4 pr-4 text-sm text-slate-500 leading-relaxed align-top">{f.answer}</td>
+                      <td className="py-4 text-right align-top">
+                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={() => { setEditingId(f.id); setFormData({question: f.question, answer: f.answer}); setIsAdding(false); }}
+                            className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(f.id)}
+                            className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {faqs.length === 0 && !loadingDB && (
+                    <tr><td colSpan="3" className="py-20 text-center text-slate-300 font-bold italic tracking-widest uppercase text-xs">Database Kosong</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </main>
 
-      {/* Modal Add/Edit */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-8 border-b flex justify-between items-center bg-slate-50/50">
-              <h3 className="text-xl font-black text-slate-800">{editingId ? "Perbarui Data" : "Tambah Data Baru"}</h3>
-              <button onClick={closeModal} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20} className="text-slate-500" /></button>
-            </div>
-            <div className="p-8 space-y-6">
-              <div>
-                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Pertanyaan / Tema:</label>
-                <input type="text" className="w-full p-4 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-500 bg-slate-50/50" value={entryForm.question} onChange={(e) => setEntryForm({...entryForm, question: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Jawaban Standar:</label>
-                <textarea className="w-full p-4 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-500 h-40 resize-none bg-slate-50/50" value={entryForm.answer} onChange={(e) => setEntryForm({...entryForm, answer: e.target.value})} />
-              </div>
-            </div>
-            <div className="p-8 bg-slate-50 border-t flex gap-4">
-              <button onClick={closeModal} className="flex-1 py-4 font-black text-slate-500 bg-white border-2 border-slate-200 rounded-2xl">BATAL</button>
-              <button onClick={handleSubmit} disabled={!user} className="flex-1 py-4 font-black bg-indigo-600 text-white rounded-2xl shadow-xl hover:bg-indigo-700 disabled:bg-slate-300">SIMPAN DATA</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6366f1; }
       `}</style>
     </div>
   );
-};
-
-export default App;
+}
