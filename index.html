@@ -87,8 +87,14 @@ export default function App() {
         console.error("Auth error:", err);
       }
     };
+
     initAuth();
-    return onAuthStateChanged(auth, setUser);
+
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   /* ================= FIRESTORE ================= */
@@ -179,19 +185,24 @@ export default function App() {
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const text = event.target.result;
-      const rows = text.split("\n").slice(1); // Skip header
-      
+      const rows = event.target.result.split("\n").slice(1);
+
       const colRef = collection(db, "artifacts", appId, "public", "data", "faqs");
-      
-      for (let row of rows) {
-        const [question, answer] = row.split(",").map(s => s?.trim());
+
+      for (const row of rows) {
+        if (!row.trim()) continue;
+        const [question, ...rest] = row.split(",");
+        const answer = rest.join(",").trim();
         if (question && answer) {
-          await addDoc(colRef, { question, answer });
+          await addDoc(colRef, {
+            question: question.trim(),
+            answer,
+          });
         }
       }
       alert("Import CSV selesai!");
     };
+
     reader.readAsText(file);
   };
 
