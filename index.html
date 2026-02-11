@@ -1,0 +1,438 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { initializeApp } from "firebase/app";
+import {
+  getFirestore,
+  collection,
+  query,
+  onSnapshot,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  writeBatch,
+  getDocs,
+} from "firebase/firestore";
+import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged,
+} from "firebase/auth";
+import {
+  Search,
+  Sparkles,
+  Loader2,
+  Database,
+  MessageSquare,
+  Copy,
+  Plus,
+  Upload,
+  Edit2,
+  Trash2,
+  X,
+  Check,
+} from "lucide-react";
+
+/* ================= FIREBASE CONFIG ================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyD7cc7bINhjzEEs4cRs8aM2nVPRrp-P1es",
+  authDomain: "asistenqna.firebaseapp.com",
+  projectId: "asistenqna",
+  storageBucket: "asistenqna.firebasestorage.app",
+  messagingSenderId: "841717936963",
+  appId: "1:841717936963:web:6aa8e3d3e551d346f835f6",
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'villa-assist-v1';
+
+const FemaleAvatar = () => (
+  <div className="relative flex-shrink-0">
+    <svg viewBox="0 0 24 24" className="w-10 h-10 drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="12" fill="#EEF2FF"/>
+      <path d="M12 14C14.2091 14 16 12.2091 16 10C16 7.79086 14.2091 6 12 6C9.79086 6 8 7.79086 8 10C8 12.2091 9.79086 14 12 14Z" fill="#6366F1"/>
+      <path d="M12 15C8.68629 15 6 17.6863 6 21H18C18 17.6863 15.3137 15 12 15Z" fill="#4F46E5"/>
+      <path d="M12 5C10.5 5 9 6.5 8.5 8C8 9.5 8.5 11 8.5 11C8.5 11 9 10 10 9.5C11 9 12 9 13 9.5C14 10 14.5 11 14.5 11C14.5 11 15 9.5 14.5 8C14 6.5 12.5 5 12 5Z" fill="#312E81"/>
+    </svg>
+    <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></div>
+  </div>
+);
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [faqs, setFaqs] = useState([]);
+  const [search, setSearch] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const [loadingAI, setLoadingAI] = useState(false);
+  const [loadingDB, setLoadingDB] = useState(true);
+  const [tab, setTab] = useState("chat");
+  
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({ question: "", answer: "" });
+  const [isAdding, setIsAdding] = useState(false);
+  const [isErasing, setIsErasing] = useState(false);
+
+  const apiKey = ""; 
+
+  /* ================= AUTH ================= */
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.error("Auth error:", err);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  /* ================= FIRESTORE ================= */
+  useEffect(() => {
+    if (!user) return;
+    const colRef = collection(db, "artifacts", appId, "public", "data", "faqs");
+    const unsubscribe = onSnapshot(colRef, (snap) => {
+      setFaqs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoadingDB(false);
+    }, (err) => {
+      console.error("Firestore error:", err);
+      setLoadingDB(false);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  /* ================= SEARCH LOGIC ================= */
+  const filteredFaqs = useMemo(() => {
+    if (!search) return [];
+    const q = search.toLowerCase();
+    return faqs.filter(
+      f =>
+        f.question?.toLowerCase().includes(q) ||
+        f.answer?.toLowerCase().includes(q)
+    );
+  }, [faqs, search]);
+
+  /* ================= CRUD ACTIONS ================= */
+  const handleSave = async () => {
+    if (!user || !formData.question || !formData.answer) return;
+    try {
+      if (editingId) {
+        const docRef = doc(db, "artifacts", appId, "public", "data", "faqs", editingId);
+        await updateDoc(docRef, formData);
+        setEditingId(null);
+      } else {
+        const colRef = collection(db, "artifacts", appId, "public", "data", "faqs");
+        await addDoc(colRef, formData);
+        setIsAdding(false);
+      }
+      setFormData({ question: "", answer: "" });
+    } catch (err) {
+      console.error("Save error:", err);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Hapus data ini?")) return;
+    try {
+      await deleteDoc(doc(db, "artifacts", appId, "public", "data", "faqs", id));
+    } catch (err) {
+      console.error("Delete error:", err);
+    }
+  };
+
+  const handleCsvUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const rows = event.target.result.split("\n").slice(1);
+      const colRef = collection(db, "artifacts", appId, "public", "data", "faqs");
+      for (const row of rows) {
+        if (!row.trim()) continue;
+        const [question, ...rest] = row.split(",");
+        const answer = rest.join(",").trim();
+        if (question && answer) {
+          await addDoc(colRef, { question: question.trim(), answer });
+        }
+      }
+      alert("Import CSV selesai!");
+    };
+    reader.readAsText(file);
+  };
+
+  /* ================= AI GENERATION (WITH WEBSITE SUGGESTION) ================= */
+  const generateAI = async () => {
+    if (!search) return;
+
+    setLoadingAI(true);
+    setAiResponse("");
+
+    const VILLA_WEBSITE = "https://lestarivillapuncak.vercel.app/";
+
+    const systemPrompt = `Kamu adalah CUSTOMER SERVICE profesional dari Lestari Villa Puncak yang ramah. 
+Gunakan data FAQ berikut sebagai acuan: ${JSON.stringify(faqs)}. 
+Jika tidak ada di data, jawablah dengan sopan berdasarkan pengetahuan umum pengelolaan villa di Puncak. 
+
+INSTRUKSI KHUSUS:
+1. Jawab maksimal 3-5 kalimat. 
+2. Di akhir jawaban, WAJIB sertakan ajakan untuk melihat galeri foto atau melakukan booking langsung melalui website resmi kami.
+3. Link website yang harus disertakan: ${VILLA_WEBSITE}
+4. Gunakan gaya bahasa WhatsApp CS yang hangat.`;
+
+    const fetchWithRetry = async (retries = 5, delay = 1000) => {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: `Pertanyaan tamu: ${search}` }] }],
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+            }),
+          }
+        );
+        if (!res.ok) throw new Error("API Failure");
+        const data = await res.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text;
+      } catch (err) {
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return fetchWithRetry(retries - 1, delay * 2);
+        }
+        throw err;
+      }
+    };
+
+    try {
+      const text = await fetchWithRetry();
+      setAiResponse(text || "Maaf, saya sedang kesulitan merangkai kata. Silakan hubungi kami langsung ya!");
+    } catch (err) {
+      setAiResponse("Koneksi AI sedang terganggu. Kakak bisa cek info lengkapnya di " + VILLA_WEBSITE);
+      console.error("AI Error:", err);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
+  const copyText = (text) => {
+    const el = document.createElement('textarea');
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <header className="bg-white border-b sticky top-0 z-10 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 py-3 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <FemaleAvatar />
+            <div>
+              <h1 className="font-black text-xl text-indigo-600">VillaAssist <span className="text-slate-800">Pro</span></h1>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Lestari Villa Puncak</p>
+            </div>
+          </div>
+          <div className="flex gap-2 bg-slate-100 p-1 rounded-xl">
+            <button onClick={() => setTab("chat")} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === "chat" ? "bg-white shadow text-indigo-600" : "text-slate-500"}`}>
+              <MessageSquare size={16} /> Chat
+            </button>
+            <button onClick={() => setTab("db")} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${tab === "db" ? "bg-white shadow text-indigo-600" : "text-slate-500"}`}>
+              <Database size={16} /> Database
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto p-6">
+        {tab === "chat" ? (
+          <>
+            <div className="relative mb-8">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                className="w-full pl-14 pr-4 py-5 rounded-2xl border-none shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none text-lg transition-all"
+                placeholder="Tanyakan fasilitas, harga, atau lokasi..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-8">
+              <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+                <h3 className="font-black mb-6 text-slate-700 flex items-center gap-2 uppercase text-xs tracking-widest">
+                  <Database size={16} className="text-indigo-500" /> Hasil Database
+                </h3>
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                  {loadingDB ? (
+                    <div className="flex justify-center py-10"><Loader2 className="animate-spin text-indigo-200" size={32} /></div>
+                  ) : filteredFaqs.length ? (
+                    filteredFaqs.map(f => (
+                      <div key={f.id} className="border border-slate-100 bg-slate-50/50 rounded-2xl p-5 hover:border-indigo-300 transition-all">
+                        <p className="font-bold text-slate-800 text-sm mb-2">{f.question}</p>
+                        <p className="text-sm text-slate-600 leading-relaxed">{f.answer}</p>
+                        <button onClick={() => copyText(f.answer)} className="flex items-center gap-2 text-xs mt-4 text-indigo-600 font-black hover:text-indigo-700 uppercase">
+                          <Copy size={14} /> Salin Jawaban
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-20 opacity-30">
+                      <Search size={48} className="mx-auto mb-4" />
+                      <p className="text-sm font-bold uppercase tracking-widest">{search ? "Tidak ada di database" : "Ketik untuk mencari..."}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm flex flex-col">
+                <h3 className="font-black mb-6 text-indigo-600 flex items-center gap-2 uppercase text-xs tracking-widest">
+                  <Sparkles size={16} /> Rekomendasi Balasan AI
+                </h3>
+                
+                <button
+                  onClick={generateAI}
+                  disabled={loadingAI || !search}
+                  className={`w-full mb-6 py-4 rounded-2xl font-black transition-all shadow-lg flex items-center justify-center gap-2 
+                    ${loadingAI 
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed shadow-none" 
+                      : !search 
+                        ? "bg-slate-50 text-slate-300 shadow-none" 
+                        : "bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:scale-[1.01] active:scale-[0.99] shadow-indigo-200"
+                    }`}
+                >
+                  {loadingAI ? (
+                    <>
+                      <Loader2 className="animate-spin" size={20} />
+                      <span className="animate-pulse">Menyusun Jawaban...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={18} />
+                      <span>BUAT BALASAN OTOMATIS</span>
+                    </>
+                  )}
+                </button>
+
+                <div className={`flex-1 rounded-2xl p-6 border transition-all duration-300 overflow-y-auto max-h-[350px]
+                  ${loadingAI ? "bg-slate-50 border-slate-100" : aiResponse ? "bg-indigo-50/30 border-indigo-100" : "bg-slate-50/20 border-slate-100"}`}>
+                  
+                  {loadingAI ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-3">
+                      <div className="flex gap-1">
+                        <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium whitespace-pre-wrap text-slate-700 leading-relaxed">
+                      {aiResponse || "Tekan tombol di atas untuk membuat draf balasan ramah beserta link website..."}
+                    </p>
+                  )}
+                </div>
+                
+                {aiResponse && !loadingAI && (
+                  <button 
+                    onClick={() => copyText(aiResponse)} 
+                    className="mt-4 py-3 bg-white border-2 border-indigo-600 text-indigo-600 font-black rounded-xl text-xs hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
+                  >
+                    SALIN TEKS UNTUK WHATSAPP
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm animate-in fade-in slide-in-from-bottom-4">
+            <div className="flex justify-between items-center mb-8">
+              <div>
+                <h3 className="font-black text-xl text-slate-800">Knowledge Base</h3>
+                <p className="text-slate-400 text-sm">Update informasi fasilitas dan aturan villa</p>
+              </div>
+              <div className="flex gap-2">
+                <label className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-bold text-slate-600 cursor-pointer transition-all">
+                  <Upload size={16} /> Import CSV
+                  <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
+                </label>
+                <button 
+                  onClick={() => { setIsAdding(true); setEditingId(null); setFormData({question: "", answer: ""}); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-sm font-bold text-white transition-all"
+                >
+                  <Plus size={16} /> Tambah Data
+                </button>
+              </div>
+            </div>
+
+            {(isAdding || editingId) && (
+              <div className="mb-8 p-6 bg-slate-50 border border-indigo-100 rounded-2xl">
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="font-black text-indigo-600 uppercase text-xs tracking-tighter">{editingId ? "Edit Data" : "Entry Baru"}</h4>
+                  <button onClick={() => { setIsAdding(false); setEditingId(null); }} className="text-slate-400"><X size={20} /></button>
+                </div>
+                <div className="grid gap-4">
+                  <input 
+                    className="w-full p-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500" 
+                    placeholder="Pertanyaan Tamu" 
+                    value={formData.question}
+                    onChange={e => setFormData({...formData, question: e.target.value})}
+                  />
+                  <textarea 
+                    className="w-full p-3 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-500 h-24" 
+                    placeholder="Jawaban Standar" 
+                    value={formData.answer}
+                    onChange={e => setFormData({...formData, answer: e.target.value})}
+                  />
+                  <button onClick={handleSave} className="w-full py-3 bg-indigo-600 text-white font-black rounded-xl flex items-center justify-center gap-2">
+                    <Check size={18} /> Simpan ke Database
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-slate-400 border-b">
+                    <th className="pb-4 font-black text-[10px] uppercase tracking-widest">Pertanyaan</th>
+                    <th className="pb-4 font-black text-[10px] uppercase tracking-widest">Jawaban</th>
+                    <th className="pb-4 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {faqs.map(f => (
+                    <tr key={f.id} className="group">
+                      <td className="py-4 pr-4 font-bold text-sm text-slate-800 max-w-[200px]">{f.question}</td>
+                      <td className="py-4 pr-4 text-sm text-slate-500 leading-relaxed">{f.answer}</td>
+                      <td className="py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => { setEditingId(f.id); setFormData({question: f.question, answer: f.answer}); setIsAdding(false); }} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                            <Edit2 size={16} />
+                          </button>
+                          <button onClick={() => handleDelete(f.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </main>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+      `}</style>
+    </div>
+  );
+}
